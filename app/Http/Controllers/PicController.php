@@ -4,43 +4,45 @@ namespace App\Http\Controllers;
 
 use App\Models\Inventory;
 use App\Models\Order;
-use App\Models\OrderItem;
 use App\Models\Product;
 use App\Models\SalesReport;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
-use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use RuntimeException;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class PicController extends Controller
 {
-    public function dashboard(Request $request): View
+    public function index(Request $request): View
     {
         $region = $request->user()->region;
 
-        abort_if(blank($region), 403, 'Akun PIC belum terhubung ke Karesidenan.');
-
-        $orders = Order::query()
-            ->where('region', $region)
-            ->where('status', Order::PAID)
-            ->whereBetween('created_at', [now()->startOfMonth(), now()->endOfMonth()])
-            ->with('items')
-            ->latest()
-            ->get();
-
         return view('dashboard.pic', [
             'region' => $region,
-            'products' => Product::query()->where('is_active', true)->orderBy('category')->orderBy('name')->get(),
-            'inventory' => Inventory::query()->where('region', $region)->with('product')->get()->keyBy('product_id'),
-            'orders' => $orders,
-            'reports' => SalesReport::query()->where('region', $region)->with('user')->latest()->limit(30)->get(),
-            'monthlySales' => $orders->sum('total_amount'),
-            'monthlyOrderCount' => $orders->count(),
-            'categories' => Product::CATEGORIES,
+            'products' => Product::query()->where('is_active', true)->with([
+                'inventories' => fn ($query) => $query->where('region', $region),
+            ])->orderBy('category')->orderBy('name')->get(),
+            'paidOrders' => Order::query()
+                ->where('region', $region)
+                ->where('status', Order::PAID)
+                ->with(['user', 'items'])
+                ->latest()
+                ->limit(100)
+                ->get(),
+            'salesTotal' => Order::query()
+                ->where('region', $region)
+                ->where('status', Order::PAID)
+                ->sum('total_amount'),
+            'salesReports' => SalesReport::query()
+                ->where('region', $region)
+                ->with('user')
+                ->latest()
+                ->get(),
         ]);
     }
 
@@ -52,48 +54,106 @@ class PicController extends Controller
         ]);
 
         $product = Product::query()
+            ->whereKey($validated['product_id'])
             ->where('is_active', true)
-            ->findOrFail($validated['product_id']);
+            ->firstOrFail();
 
-        DB::transaction(function () use ($request, $validated, $product): void {
-            $inventory = Inventory::query()->firstOrCreate([
-                'product_id' => $product->id,
-                'region' => $request->user()->region,
-            ], [
-                'quantity' => 0,
-            ]);
+        Inventory::updateOrCreate(
+            ['product_id' => $product->id, 'region' => $request->user()->region],
+            ['quantity' => $validated['quantity']],
+        );
 
-            $inventory = Inventory::query()->lockForUpdate()->findOrFail($inventory->id);
-            $reservedQuantity = OrderItem::query()
-                ->where('product_id', $product->id)
-                ->whereHas('order', function (Builder $query) use ($request): void {
-                    $query->where('region', $request->user()->region)
-                        ->whereIn('status', [Order::PENDING_PAYMENT, Order::AWAITING_APPROVAL])
-                        ->where('expires_at', '>', now());
-                })
-                ->sum('quantity');
+        return back()->with('status', 'Stok wilayah berhasil diperbarui.');
+    }
 
-            if ($validated['quantity'] < $reservedQuantity) {
+    public function uploadInventory(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'inventory_file' => ['required', 'file', 'mimes:csv,txt', 'max:5120'],
+        ]);
+
+        $handle = fopen($validated['inventory_file']->getRealPath(), 'rb');
+
+        if ($handle === false) {
+            throw new RuntimeException('File stok tidak dapat dibaca.');
+        }
+
+        try {
+            $header = fgetcsv($handle, escape: '');
+            $header = is_array($header)
+                ? array_map(fn ($value): string => Str::lower(trim((string) $value)), $header)
+                : [];
+            $productColumn = array_search('product_id', $header, true);
+            $quantityColumn = array_search('quantity', $header, true);
+
+            if ($productColumn === false || $quantityColumn === false) {
                 throw ValidationException::withMessages([
-                    'quantity' => 'Stok baru tidak boleh lebih rendah dari jumlah yang sedang dipesan.',
+                    'inventory_file' => 'CSV harus memiliki kolom product_id dan quantity.',
                 ]);
             }
 
-            $inventory->update(['quantity' => $validated['quantity']]);
+            $rows = [];
+            $line = 1;
+
+            while (($columns = fgetcsv($handle, escape: '')) !== false) {
+                $line++;
+
+                if ($columns === [null] || $columns === []) {
+                    continue;
+                }
+
+                $productId = filter_var($columns[$productColumn] ?? null, FILTER_VALIDATE_INT);
+                $quantity = filter_var($columns[$quantityColumn] ?? null, FILTER_VALIDATE_INT);
+
+                if ($productId === false || $quantity === false || $quantity < 0 || $quantity > 1000000) {
+                    throw ValidationException::withMessages([
+                        'inventory_file' => "Baris {$line} harus berisi product_id dan quantity bilangan bulat yang valid.",
+                    ]);
+                }
+
+                if (! Product::query()->whereKey($productId)->where('is_active', true)->exists()) {
+                    throw ValidationException::withMessages([
+                        'inventory_file' => "Produk pada baris {$line} tidak ditemukan atau tidak aktif.",
+                    ]);
+                }
+
+                $rows[$productId] = $quantity;
+            }
+        } finally {
+            fclose($handle);
+        }
+
+        if ($rows === []) {
+            throw ValidationException::withMessages([
+                'inventory_file' => 'CSV tidak memuat baris stok produk.',
+            ]);
+        }
+
+        DB::transaction(function () use ($rows, $request): void {
+            foreach ($rows as $productId => $quantity) {
+                Inventory::query()->updateOrCreate(
+                    ['product_id' => $productId, 'region' => $request->user()->region],
+                    ['quantity' => $quantity],
+                );
+            }
         });
 
-        return back()->with('status', "Stok {$product->name} di {$request->user()->region} berhasil diperbarui.");
+        return back()->with('status', 'Stok dari CSV berhasil diimpor.');
     }
 
     public function uploadSalesReport(Request $request): RedirectResponse
     {
         $validated = $request->validate([
             'period' => ['required', 'date_format:Y-m'],
-            'report_file' => ['required', 'file', 'mimes:pdf,csv,xls,xlsx', 'max:10240'],
             'remarks' => ['nullable', 'string', 'max:1000'],
+            'report_file' => ['required', 'file', 'mimes:pdf,csv,xls,xlsx,jpg,jpeg,png', 'max:10240'],
         ]);
 
-        $path = $request->file('report_file')->store('sales-reports');
+        $path = $validated['report_file']->store('sales-reports', 'local');
+
+        if (! is_string($path)) {
+            throw new RuntimeException('Gagal menyimpan file rekap penjualan.');
+        }
 
         SalesReport::create([
             'user_id' => $request->user()->id,
@@ -106,10 +166,13 @@ class PicController extends Controller
         return back()->with('status', 'Rekap penjualan berhasil diunggah.');
     }
 
-    public function downloadSalesReport(Request $request, SalesReport $salesReport): BinaryFileResponse
+    public function downloadSalesReport(Request $request, SalesReport $salesReport): StreamedResponse
     {
         abort_unless($salesReport->region === $request->user()->region, 404);
 
-        return response()->download(Storage::disk('local')->path($salesReport->file_path));
+        return Storage::disk('local')->download(
+            $salesReport->file_path,
+            'rekap-penjualan-'.$salesReport->period,
+        );
     }
 }

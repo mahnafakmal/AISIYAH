@@ -7,62 +7,49 @@ use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Validation\Rule;
 
-#[Signature('app:create-staff-user {role=admin}')]
+#[Signature('app:create-staff-user {name} {email} {role=admin} {--region=} {--phone=}')]
 #[Description('Create an administrator, leader, or regional PIC account')]
 class CreateStaffUser extends Command
 {
     public function handle(): int
     {
-        $role = (string) $this->argument('role');
+        $attributes = [
+            'name' => $this->argument('name'),
+            'email' => $this->argument('email'),
+            'role' => $this->argument('role'),
+            'region' => $this->option('region'),
+            'phone' => $this->option('phone'),
+        ];
 
-        if (! in_array($role, ['admin', 'pimpinan', 'pic'], true)) {
-            $this->error('Role harus admin, pimpinan, atau pic.');
+        $validator = Validator::make($attributes, [
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'email', 'max:255', 'unique:users,email'],
+            'role' => ['required', 'in:admin,pimpinan,pic'],
+            'region' => ['required_if:role,pic', 'nullable', 'string', 'max:255'],
+            'phone' => ['nullable', 'string', 'max:30'],
+        ]);
+
+        if ($validator->fails()) {
+            $this->error($validator->errors()->first());
 
             return self::FAILURE;
         }
 
-        $name = $this->ask('Nama pengguna');
-        $email = $this->ask('Email');
-        $phone = $this->ask('Nomor telepon (opsional)');
-        $region = $role === 'pic' ? $this->ask('Nama Karesidenan') : null;
-        $password = $this->secret('Kata sandi (minimal 12 karakter)');
-        $passwordConfirmation = $this->secret('Ulangi kata sandi');
+        $password = $this->secret('Kata sandi akun baru');
 
-        $validator = Validator::make([
-            'name' => $name,
-            'email' => $email,
-            'phone' => $phone,
-            'region' => $region,
-            'password' => $password,
-            'password_confirmation' => $passwordConfirmation,
-        ], [
-            'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'email', 'max:255', 'unique:users,email'],
-            'phone' => ['nullable', 'string', 'max:30'],
-            'region' => [Rule::requiredIf($role === 'pic'), 'nullable', 'string', 'max:120'],
-            'password' => ['required', 'string', 'min:12', 'confirmed'],
-        ]);
-
-        if ($validator->fails()) {
-            foreach ($validator->errors()->all() as $error) {
-                $this->error($error);
-            }
+        if (! is_string($password) || strlen($password) < 8) {
+            $this->error('Kata sandi harus memiliki minimal 8 karakter.');
 
             return self::FAILURE;
         }
 
         User::create([
-            'name' => $name,
-            'email' => $email,
-            'phone' => $phone ?: null,
-            'role' => $role,
-            'region' => $region,
+            ...$validator->validated(),
             'password' => $password,
         ]);
 
-        $this->info("Akun {$role} berhasil dibuat untuk {$email}.");
+        $this->info('Akun staf berhasil dibuat.');
 
         return self::SUCCESS;
     }

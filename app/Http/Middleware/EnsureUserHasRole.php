@@ -15,15 +15,7 @@ class EnsureUserHasRole
      */
     public function handle(Request $request, Closure $next, string ...$roles): Response
     {
-        $allowedRoles = [];
-
-        foreach ($roles as $roleGroup) {
-            array_push($allowedRoles, ...explode('|', $roleGroup));
-        }
-
-        if (! $request->user() || ! in_array($request->user()->role, $allowedRoles, true)) {
-            abort(403);
-        }
+        abort_unless($request->user()?->isRole(...$roles), 403);
 
         return $next($request);
     }

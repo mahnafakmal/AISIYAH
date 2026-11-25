@@ -2,14 +2,14 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['product_id', 'region', 'quantity'])]
 class Inventory extends Model
 {
     protected $table = 'inventory';
+
+    protected $fillable = ['product_id', 'region', 'quantity'];
 
     protected function casts(): array
     {

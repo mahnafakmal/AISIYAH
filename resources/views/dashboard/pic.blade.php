@@ -1,89 +1,91 @@
-<!DOCTYPE html>
-<html lang="id">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Dashboard PIC {{ $region }}</title>
-    @vite(['resources/css/app.css'])
-</head>
-<body class="min-h-screen bg-sage-50 text-slate-800">
-    <header class="bg-brand-950 text-white">
-        <div class="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-4 py-5 sm:px-6">
-            <div><a href="{{ route('home') }}" class="text-sm text-brand-200 underline">Lihat website</a><h1 class="mt-1 font-serif text-2xl font-bold">Dashboard PIC · {{ $region }}</h1><p class="text-sm text-brand-100">{{ auth()->user()->name }}</p></div>
-            <form method="POST" action="{{ route('logout') }}">@csrf<button class="rounded-xl border border-brand-600 px-4 py-2 text-sm font-semibold hover:bg-brand-900">Keluar</button></form>
+@extends('layouts.app')
+
+@section('title', 'Dashboard PIC Karesidenan')
+
+@section('content')
+    <div class="mx-auto max-w-7xl space-y-9 px-4 py-10 sm:px-6">
+        <div>
+            <p class="text-sm font-bold uppercase tracking-widest text-brand-700">Pengelolaan wilayah</p>
+            <h1 class="mt-2 font-serif text-3xl font-bold">PIC Karesidenan {{ $region }}</h1>
+            <p class="mt-2 text-slate-600">Perbarui stok, pantau pesanan wilayah, dan unggah rekap penjualan.</p>
         </div>
-    </header>
-    <main class="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6">
-        @if (session('status'))<p class="rounded-xl border border-brand-200 bg-brand-50 p-4 text-sm text-brand-900">{{ session('status') }}</p>@endif
-        @if ($errors->any())<div class="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800"><ul class="list-inside list-disc">@foreach ($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
 
         <section class="grid gap-4 sm:grid-cols-2">
-            <article class="rounded-2xl border border-sage-200 bg-white p-5"><p class="text-sm text-slate-500">Penjualan terverifikasi bulan ini</p><p class="mt-2 text-2xl font-bold text-brand-800">Rp {{ number_format($monthlySales, 0, ',', '.') }}</p></article>
-            <article class="rounded-2xl border border-sage-200 bg-white p-5"><p class="text-sm text-slate-500">Pesanan lunas bulan ini</p><p class="mt-2 text-2xl font-bold text-slate-950">{{ $monthlyOrderCount }}</p></article>
-        </section>
-
-        <section class="rounded-2xl border border-sage-200 bg-white p-6">
-            <h2 class="font-serif text-2xl font-bold text-slate-950">Persediaan wilayah</h2>
-            <p class="mt-1 text-sm text-slate-600">Masukkan jumlah stok fisik terbaru untuk produk di Karesidenan {{ $region }}. Pesanan yang belum diverifikasi tetap diperhitungkan.</p>
-            <div class="mt-5 space-y-3">
-                @forelse ($products as $product)
-                    @php($stock = $inventory->get($product->id)?->quantity ?? 0)
-                    <form method="POST" action="{{ route('pic.inventory.update') }}" class="grid items-end gap-3 rounded-xl border border-sage-100 p-4 sm:grid-cols-[1fr_10rem_auto]">
-                        @csrf @method('PUT')
-                        <input type="hidden" name="product_id" value="{{ $product->id }}">
-                        <div><p class="font-semibold text-slate-900">{{ $product->name }}</p><p class="text-xs text-slate-500">{{ $categories[$product->category] ?? $product->category }} · stok saat ini {{ $stock }}</p></div>
-                        <div><label for="quantity-{{ $product->id }}" class="mb-1 block text-xs font-semibold">Stok terbaru</label><input id="quantity-{{ $product->id }}" name="quantity" type="number" min="0" max="1000000" value="{{ $stock }}" required class="w-full rounded-lg border border-sage-200 px-3 py-2"></div>
-                        <button class="rounded-lg bg-brand-800 px-4 py-2 font-semibold text-white hover:bg-brand-900">Simpan stok</button>
-                    </form>
-                @empty
-                    <p class="rounded-xl bg-sage-50 p-5 text-sm text-slate-600">Belum ada produk aktif. Hubungi Admin.</p>
-                @endforelse
-            </div>
+            <div class="rounded-2xl bg-white p-5 shadow-sm"><p class="text-sm text-slate-500">Transaksi terverifikasi</p><p class="mt-2 text-3xl font-bold">{{ $paidOrders->count() }}</p></div>
+            <div class="rounded-2xl bg-white p-5 shadow-sm"><p class="text-sm text-slate-500">Total penjualan terverifikasi</p><p class="mt-2 text-3xl font-bold">Rp {{ number_format($salesTotal, 0, ',', '.') }}</p></div>
         </section>
 
         <section class="grid gap-6 lg:grid-cols-2">
-            <div class="rounded-2xl border border-sage-200 bg-white p-6">
-                <h2 class="font-serif text-2xl font-bold text-slate-950">Unggah rekap penjualan</h2>
-                <p class="mt-1 text-sm text-slate-600">Unggah file rekap PDF, CSV, XLS, atau XLSX. Penjualan pesanan online terverifikasi juga direkap otomatis.</p>
-                <form method="POST" action="{{ route('pic.reports.store') }}" enctype="multipart/form-data" class="mt-5 space-y-4">
-                    @csrf
-                    <div><label for="period" class="mb-1 block text-sm font-semibold">Periode rekap</label><input id="period" name="period" type="month" value="{{ now()->format('Y-m') }}" required class="w-full rounded-xl border border-sage-200 px-3 py-2.5"></div>
-                    <div><label for="report_file" class="mb-1 block text-sm font-semibold">File rekap (maks. 10 MB)</label><input id="report_file" name="report_file" type="file" accept=".pdf,.csv,.xls,.xlsx" required class="block w-full rounded-xl border border-sage-200 p-2 text-sm"></div>
-                    <div><label for="remarks" class="mb-1 block text-sm font-semibold">Catatan (opsional)</label><textarea id="remarks" name="remarks" rows="2" maxlength="1000" class="w-full rounded-xl border border-sage-200 px-3 py-2.5"></textarea></div>
-                    <button class="rounded-xl bg-brand-800 px-5 py-3 font-semibold text-white hover:bg-brand-900">Unggah rekap</button>
+            <div class="rounded-3xl bg-white p-6 shadow-sm sm:p-8">
+                <h2 class="font-serif text-2xl font-bold">Perbarui stok produk</h2>
+                <form method="POST" action="{{ route('pic.inventory.update') }}" class="mt-5 space-y-4">
+                    @csrf @method('PUT')
+                    <div><label for="inventory-product" class="mb-1 block text-sm font-semibold">Produk</label><select id="inventory-product" name="product_id" required class="w-full rounded-xl border border-slate-300 px-4 py-3">@foreach ($products as $product)<option value="{{ $product->id }}">{{ $product->name }} ({{ \App\Models\Product::CATEGORIES[$product->category] ?? $product->category }})</option>@endforeach</select></div>
+                    <div><label for="inventory-quantity" class="mb-1 block text-sm font-semibold">Jumlah stok baru</label><input id="inventory-quantity" name="quantity" type="number" min="0" max="1000000" required class="w-full rounded-xl border border-slate-300 px-4 py-3"></div>
+                    <button class="rounded-xl bg-brand-700 px-5 py-3 font-semibold text-white hover:bg-brand-800" type="submit">Simpan stok</button>
                 </form>
             </div>
-
-            <div class="rounded-2xl border border-sage-200 bg-white p-6">
-                <h2 class="font-serif text-2xl font-bold text-slate-950">Riwayat file rekap</h2>
-                <ul class="mt-4 divide-y divide-sage-100">
-                    @forelse ($reports as $report)
-                        <li class="flex items-center justify-between gap-3 py-3">
-                            <span><span class="block font-semibold">{{ $report->period }}</span><span class="text-xs text-slate-500">{{ $report->remarks ?? 'Tanpa catatan' }}</span></span>
-                            <a href="{{ route('pic.reports.download', $report) }}" class="text-sm font-semibold text-brand-800 underline">Unduh</a>
-                        </li>
-                    @empty
-                        <li class="py-4 text-sm text-slate-500">Belum ada file rekap diunggah.</li>
-                    @endforelse
-                </ul>
+            <div class="rounded-3xl bg-white p-6 shadow-sm sm:p-8">
+                <h2 class="font-serif text-2xl font-bold">Impor stok dari CSV</h2>
+                <p class="mt-2 text-sm text-slate-600">Unggah CSV dengan header <code class="rounded bg-slate-100 px-1">product_id,quantity</code>. Gunakan ID pada tabel stok di bawah; jumlah menggantikan stok Anda untuk wilayah {{ $region }}.</p>
+                <form method="POST" action="{{ route('pic.inventory.upload') }}" enctype="multipart/form-data" class="mt-5 space-y-4">
+                    @csrf
+                    <div><label for="inventory-file" class="mb-1 block text-sm font-semibold">File stok (CSV)</label><input id="inventory-file" name="inventory_file" type="file" accept=".csv,.txt,text/csv" required class="w-full rounded-xl border border-slate-300 px-4 py-2.5"></div>
+                    <button class="rounded-xl border border-brand-700 px-5 py-3 font-semibold text-brand-800 hover:bg-brand-50" type="submit">Unggah dan perbarui stok</button>
+                </form>
             </div>
         </section>
 
-        <section class="rounded-2xl border border-sage-200 bg-white p-6">
-            <h2 class="font-serif text-2xl font-bold text-slate-950">Penjualan bulan {{ now()->translatedFormat('F Y') }}</h2>
+        <section class="rounded-3xl bg-white p-6 shadow-sm sm:p-8">
+            <h2 class="font-serif text-2xl font-bold">Stok wilayah {{ $region }}</h2>
             <div class="mt-4 overflow-x-auto">
-                <table class="w-full min-w-[600px] text-left text-sm">
-                    <thead class="border-b border-sage-200 text-xs uppercase text-slate-500"><tr><th class="py-3 pr-3">Pesanan</th><th class="py-3 pr-3">Tanggal</th><th class="py-3 pr-3">Item</th><th class="py-3">Total</th></tr></thead>
-                    <tbody class="divide-y divide-sage-100">
-                        @forelse ($orders as $order)
-                            <tr><td class="py-3 pr-3 font-semibold">{{ $order->order_number }}</td><td class="py-3 pr-3">{{ $order->created_at->format('d M Y') }}</td><td class="py-3 pr-3">{{ $order->items->sum('quantity') }}</td><td class="py-3">Rp {{ number_format($order->total_amount, 0, ',', '.') }}</td></tr>
-                        @empty
-                            <tr><td colspan="4" class="py-5 text-slate-500">Belum ada penjualan terverifikasi bulan ini.</td></tr>
-                        @endforelse
+                <table class="w-full min-w-[500px] text-left text-sm">
+                    <thead class="border-b text-xs uppercase text-slate-500"><tr><th class="py-3 pr-4">ID</th><th class="py-3 pr-4">Produk</th><th class="py-3 pr-4">Kategori</th><th class="py-3">Stok</th></tr></thead>
+                    <tbody class="divide-y">
+                        @foreach ($products as $product)
+                            <tr><td class="py-3 pr-4">{{ $product->id }}</td><td class="py-3 pr-4 font-medium">{{ $product->name }}</td><td class="py-3 pr-4">{{ \App\Models\Product::CATEGORIES[$product->category] ?? $product->category }}</td><td class="py-3">{{ $product->inventories->first()?->quantity ?? 0 }}</td></tr>
+                        @endforeach
                     </tbody>
                 </table>
             </div>
         </section>
-    </main>
-</body>
-</html>
+
+        <section class="grid gap-6 lg:grid-cols-2">
+            <div class="rounded-3xl bg-white p-6 shadow-sm sm:p-8">
+                <h2 class="font-serif text-2xl font-bold">Unggah rekap penjualan</h2>
+                <p class="mt-2 text-sm text-slate-600">Ringkasan otomatis hanya menghitung pesanan yang pembayarannya disetujui Admin.</p>
+                <form method="POST" action="{{ route('pic.sales-reports.store') }}" enctype="multipart/form-data" class="mt-5 space-y-4">
+                    @csrf
+                    <div><label for="report-period" class="mb-1 block text-sm font-semibold">Periode</label><input id="report-period" name="period" type="month" value="{{ now()->format('Y-m') }}" required class="w-full rounded-xl border border-slate-300 px-4 py-3"></div>
+                    <div><label for="report-remarks" class="mb-1 block text-sm font-semibold">Catatan (opsional)</label><textarea id="report-remarks" name="remarks" rows="2" maxlength="1000" class="w-full rounded-xl border border-slate-300 px-4 py-3"></textarea></div>
+                    <div><label for="report-file" class="mb-1 block text-sm font-semibold">File (PDF, CSV, Excel, atau gambar)</label><input id="report-file" name="report_file" type="file" accept=".pdf,.csv,.xls,.xlsx,.jpg,.jpeg,.png" required class="w-full rounded-xl border border-slate-300 px-4 py-2.5"></div>
+                    <button class="rounded-xl bg-brand-700 px-5 py-3 font-semibold text-white hover:bg-brand-800" type="submit">Unggah rekap</button>
+                </form>
+                @if ($salesReports->isNotEmpty())
+                    <div class="mt-6 border-t pt-4">
+                        <h3 class="font-semibold">Rekap yang diunggah</h3>
+                        <ul class="mt-2 space-y-2 text-sm">
+                            @foreach ($salesReports as $report)
+                                <li><a href="{{ route('pic.sales-reports.download', $report) }}" class="text-brand-700 underline">{{ $report->period }} — {{ $report->remarks ?: 'Unduh file rekap' }}</a></li>
+                            @endforeach
+                        </ul>
+                    </div>
+                @endif
+            </div>
+            <div class="rounded-3xl bg-white p-6 shadow-sm sm:p-8">
+                <h2 class="font-serif text-2xl font-bold">Penjualan terverifikasi</h2>
+                <div class="mt-4 space-y-3">
+                    @forelse ($paidOrders as $order)
+                        <article class="rounded-xl border border-slate-200 p-4">
+                            <div class="flex flex-wrap justify-between gap-2"><p class="font-semibold">{{ $order->order_number }}</p><p class="font-semibold text-brand-800">Rp {{ number_format($order->total_amount, 0, ',', '.') }}</p></div>
+                            <p class="mt-1 text-sm text-slate-600">{{ $order->user->name }} · {{ $order->created_at->format('d/m/Y') }}</p>
+                            <p class="mt-2 text-xs text-slate-500">{{ $order->items->map(fn ($item) => $item->product_name.' × '.$item->quantity)->join(', ') }}</p>
+                        </article>
+                    @empty
+                        <p class="rounded-xl bg-slate-50 p-4 text-sm text-slate-600">Belum ada pembayaran terverifikasi untuk wilayah ini.</p>
+                    @endforelse
+                </div>
+            </div>
+        </section>
+    </div>
+@endsection

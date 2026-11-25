@@ -31,13 +31,28 @@ class User extends Authenticatable
         ];
     }
 
+    public function isRole(string ...$roles): bool
+    {
+        return in_array($this->role, $roles, true);
+    }
+
+    public function products(): HasMany
+    {
+        return $this->hasMany(Product::class, 'created_by');
+    }
+
     public function orders(): HasMany
     {
         return $this->hasMany(Order::class);
     }
 
-    public function isStaff(): bool
+    public function paymentProofs(): HasMany
     {
-        return in_array($this->role, ['admin', 'pimpinan', 'pic'], true);
+        return $this->hasMany(PaymentProof::class, 'uploaded_by');
+    }
+
+    public function salesReports(): HasMany
+    {
+        return $this->hasMany(SalesReport::class);
     }
 }

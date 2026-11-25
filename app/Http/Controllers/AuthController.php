@@ -6,8 +6,6 @@ use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Validation\Rules\Password;
 use Illuminate\View\View;
 
 class AuthController extends Controller
@@ -15,11 +13,6 @@ class AuthController extends Controller
     public function showLogin(): View
     {
         return view('auth.login');
-    }
-
-    public function showRegistration(): View
-    {
-        return view('auth.register');
     }
 
     public function login(Request $request): RedirectResponse
@@ -30,14 +23,19 @@ class AuthController extends Controller
         ]);
 
         if (! Auth::attempt($credentials, $request->boolean('remember'))) {
-            return back()->withErrors([
-                'email' => 'Email atau kata sandi tidak sesuai.',
-            ])->onlyInput('email');
+            return back()
+                ->withErrors(['email' => 'Email atau kata sandi tidak sesuai.'])
+                ->onlyInput('email');
         }
 
         $request->session()->regenerate();
 
-        return redirect()->intended(route('dashboard'));
+        return redirect()->intended($this->dashboardRoute($request->user()));
+    }
+
+    public function showRegistration(): View
+    {
+        return view('auth.register');
     }
 
     public function register(Request $request): RedirectResponse
@@ -46,21 +44,21 @@ class AuthController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', 'unique:users,email'],
             'phone' => ['nullable', 'string', 'max:30'],
-            'password' => ['required', 'confirmed', Password::defaults()],
+            'password' => ['required', 'string', 'min:8', 'confirmed'],
         ]);
 
         $user = User::create([
             'name' => $validated['name'],
             'email' => $validated['email'],
             'phone' => $validated['phone'] ?? null,
-            'password' => Hash::make($validated['password']),
+            'password' => $validated['password'],
             'role' => 'customer',
         ]);
 
         Auth::login($user);
         $request->session()->regenerate();
 
-        return redirect()->route('home')->with('status', 'Akun berhasil dibuat. Silakan lanjutkan pesanan.');
+        return redirect()->route('storefront');
     }
 
     public function logout(Request $request): RedirectResponse
@@ -69,6 +67,16 @@ class AuthController extends Controller
         $request->session()->invalidate();
         $request->session()->regenerateToken();
 
-        return redirect()->route('home');
+        return redirect()->route('storefront');
+    }
+
+    private function dashboardRoute(User $user): string
+    {
+        return match ($user->role) {
+            'admin' => route('admin.dashboard'),
+            'pic' => route('pic.dashboard'),
+            'pimpinan' => route('pimpinan.dashboard'),
+            default => route('storefront'),
+        };
     }
 }

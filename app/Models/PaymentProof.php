@@ -2,13 +2,21 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['order_id', 'uploaded_by', 'file_path', 'status', 'reviewed_by', 'review_note', 'reviewed_at'])]
 class PaymentProof extends Model
 {
+    protected $fillable = [
+        'order_id',
+        'uploaded_by',
+        'file_path',
+        'status',
+        'reviewed_by',
+        'review_note',
+        'reviewed_at',
+    ];
+
     protected function casts(): array
     {
         return ['reviewed_at' => 'datetime'];
